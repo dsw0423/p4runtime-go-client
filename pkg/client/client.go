@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	code "google.golang.org/genproto/googleapis/rpc/code"
@@ -85,6 +86,16 @@ func (c *Client) Run(
 
 	connStatusCh := make(chan error)
 
+	var sendArbitration = func() {
+		stream.Send(&p4_v1.StreamMessageRequest{
+			Update: &p4_v1.StreamMessageRequest_Arbitration{Arbitration: &p4_v1.MasterArbitrationUpdate{
+				DeviceId:   c.deviceID,
+				ElectionId: c.electionID,
+				Role:       c.role,
+			}},
+		})
+	}
+
 	go func() {
 		for {
 			in, err := stream.Recv()
@@ -106,6 +117,10 @@ func (c *Client) Run(
 				if arbitrationCh != nil {
 					arbitrationCh <- false
 				}
+				go func() {
+					time.Sleep(500 * time.Millisecond)
+					sendArbitration()
+				}()
 			} else {
 				if arbitrationCh != nil {
 					arbitrationCh <- true
@@ -114,13 +129,7 @@ func (c *Client) Run(
 		}
 	}()
 
-	stream.Send(&p4_v1.StreamMessageRequest{
-		Update: &p4_v1.StreamMessageRequest_Arbitration{Arbitration: &p4_v1.MasterArbitrationUpdate{
-			DeviceId:   c.deviceID,
-			ElectionId: c.electionID,
-			Role:       c.role,
-		}},
-	})
+	sendArbitration()
 
 	for {
 		select {
